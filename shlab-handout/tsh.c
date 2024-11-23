@@ -276,16 +276,13 @@ int builtin_cmd(char **argv) {
     sigprocmask(SIG_SETMASK, &pre, NULL);
     return 1;
   }
+  // TODO:built bg_fg
   if (!strcmp(argv[0], "fg")) {
     listjobs(jobs);
     return 1;
   }
   if (!strcmp(argv[0], "bg")) {
-    sigset_t mask, pre;
-    sigfillset(&mask);
-    sigprocmask(SIG_BLOCK, &mask, &pre);
-    listjobs(jobs);
-    sigprocmask(SIG_SETMASK, &pre, NULL);
+    do_bgfg(argv);
     return 1;
   }
   return 0; /* not a builtin command */
@@ -294,7 +291,31 @@ int builtin_cmd(char **argv) {
 /*
  * do_bgfg - Execute the builtin bg and fg commands
  */
-void do_bgfg(char **argv) { return; }
+// TODO:do_bgfg
+void do_bgfg(char **argv) {
+  if (!strcmp(argv[0], "bg")) { // write a branch to implement bg command
+    int jid;                    // use a jid to unify the pid and jid
+    struct job_t *job;
+    if (!argv[1]) { // require an argument after command
+      printf("please input jid or pid");
+    } else if (!strchr(argv[1], '%')) { // unify jid and pid
+      char *buf = argv[1];
+      buf++;
+      jid = pid2jid(atoi(buf));
+    } else {
+      char *buf = argv[1];
+      buf++;
+      jid = atoi(buf); // atoi means string to int
+    }
+    job = getjobjid(jobs, jid); // main operation
+    if (job->state == ST) {
+      kill(-job->pid, SIGCONT);
+      job->state = BG;
+    }
+    printf("[%d] (%d) %s", pid2jid(job->pid), job->pid, job->cmdline);
+  }
+  return;
+}
 
 /*
  * waitfg - Block until process pid is no longer the foreground process
