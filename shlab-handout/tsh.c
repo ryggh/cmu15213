@@ -278,7 +278,7 @@ int builtin_cmd(char **argv) {
   }
   // TODO:built bg_fg
   if (!strcmp(argv[0], "fg")) {
-    listjobs(jobs);
+    do_bgfg(argv);
     return 1;
   }
   if (!strcmp(argv[0], "bg")) {
@@ -293,26 +293,58 @@ int builtin_cmd(char **argv) {
  */
 // TODO:do_bgfg
 void do_bgfg(char **argv) {
+  int _jid; // use a jid to unify the pid and jid
+  struct job_t *job;
+  sigset_t mask_all, pre_all;
+  sigfillset(&mask_all);
   if (!strcmp(argv[0], "bg")) { // write a branch to implement bg command
-    int jid;                    // use a jid to unify the pid and jid
-    struct job_t *job;
-    if (!argv[1]) { // require an argument after command
+    if (!argv[1]) {             // require an argument after command
       printf("please input jid or pid");
     } else if (!strchr(argv[1], '%')) { // unify jid and pid
       char *buf = argv[1];
       buf++;
-      jid = pid2jid(atoi(buf));
+      _jid = pid2jid(atoi(buf));
     } else {
       char *buf = argv[1];
       buf++;
-      jid = atoi(buf); // atoi means string to int
+      _jid = atoi(buf); // atoi means string to int
     }
-    job = getjobjid(jobs, jid); // main operation
+    job = getjobjid(jobs, _jid); // main operation
     if (job->state == ST) {
       kill(-job->pid, SIGCONT);
       job->state = BG;
     }
     printf("[%d] (%d) %s", pid2jid(job->pid), job->pid, job->cmdline);
+  }
+
+  // implement fg command
+
+  if (!strcmp(argv[0], "fg")) { // write a branch to implement fg command
+    if (!argv[1]) {             // require an argument after command
+      printf("please input jid or pid");
+    } else if (!strchr(argv[1], '%')) { // unify jid and pid
+      char *buf = argv[1];
+      buf++;
+      _jid = pid2jid(atoi(buf));
+    } else {
+      char *buf = argv[1];
+      buf++;
+      _jid = atoi(buf); // atoi means string to int
+    }
+    sigprocmask(SIG_BLOCK, &mask_all, &pre_all);
+    job = getjobjid(jobs, _jid); // main operation
+    if (job) {
+      if (job->state == ST || job->state == BG) {
+        if (job->state == ST) {
+          kill(-job->pid, SIGCONT);
+        }
+        job->state = FG;
+        sigprocmask(SIG_SETMASK, &pre_all, NULL);
+        waitfg(job->pid);
+      }
+    } else {
+      printf("no background job\n");
+    }
   }
   return;
 }
@@ -327,6 +359,7 @@ void waitfg(pid_t pid) {
   while (global_pid != pid) {
     sigsuspend(&mask);
   }
+  global_pid = 0;
   return;
 }
 
