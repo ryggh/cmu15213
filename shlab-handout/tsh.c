@@ -87,6 +87,19 @@ void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 pid_t Fork(void);
+int is_all_digits(const char *str) {
+  if (*str == '\0')
+    return 0;
+  if (*str == '%')
+    str++;
+  while (*str) {
+    if (!isdigit(*str)) {
+      return 0;
+    }
+    str++;
+  }
+  return 1;
+}
 
 /*
  * main - The shell's main routine
@@ -185,7 +198,9 @@ void eval(char *cmdline) {
       sigprocmask(SIG_SETMASK, &pre_one, NULL);
       setpgid(0, 0);
       if (execve(argv[0], argv, environ) < 0) {
-        app_error("Command not found");
+        cmdline[strlen(cmdline) - 1] = '\0';
+        printf("%s: Command not found\n", cmdline);
+        cmdline[strlen(cmdline) - 1] = '\n';
         exit(1);
       }
     }
@@ -299,37 +314,61 @@ void do_bgfg(char **argv) {
   sigfillset(&mask_all);
   if (!strcmp(argv[0], "bg")) { // write a branch to implement bg command
     if (!argv[1]) {             // require an argument after command
-      printf("please input jid or pid");
+      printf("bg command requires PID or %%jobid argument\n");
+      return;
+    } else if (!is_all_digits(argv[1])) {
+      printf("argument must be a PID or %%jobid\n");
+      return;
     } else if (!strchr(argv[1], '%')) { // unify jid and pid
       char *buf = argv[1];
-      buf++;
-      _jid = pid2jid(atoi(buf));
+      if (pid2jid(atoi(buf))) {
+        _jid = pid2jid(atoi(buf));
+      } else {
+        printf("(%s): No such process\n", buf);
+        return;
+      }
     } else {
       char *buf = argv[1];
       buf++;
       _jid = atoi(buf); // atoi means string to int
+      if (!(job = getjobjid(jobs, _jid))) {
+        printf("(%%%s): No such job\n", buf);
+      } // main operation
+      job = getjobjid(jobs, _jid); // main operation
     }
-    job = getjobjid(jobs, _jid); // main operation
-    if (job->state == ST) {
-      kill(-job->pid, SIGCONT);
-      job->state = BG;
+    if (job) {
+      if (job->state == ST) {
+        kill(-job->pid, SIGCONT);
+        job->state = BG;
+        printf("[%d] (%d) %s", pid2jid(job->pid), job->pid, job->cmdline);
+      }
     }
-    printf("[%d] (%d) %s", pid2jid(job->pid), job->pid, job->cmdline);
   }
 
   // implement fg command
 
   if (!strcmp(argv[0], "fg")) { // write a branch to implement fg command
     if (!argv[1]) {             // require an argument after command
-      printf("please input jid or pid");
+      printf("fg command requires PID or %%jobid argument\n");
+      return;
+    } else if (!is_all_digits(argv[1])) {
+      printf("argument must be a PID or %%jobid\n");
+      return;
     } else if (!strchr(argv[1], '%')) { // unify jid and pid
       char *buf = argv[1];
-      buf++;
-      _jid = pid2jid(atoi(buf));
+      if (pid2jid(atoi(buf))) {
+        _jid = pid2jid(atoi(buf));
+      } else {
+        printf("(%s): No such process\n", buf);
+        return;
+      }
     } else {
       char *buf = argv[1];
       buf++;
       _jid = atoi(buf); // atoi means string to int
+      if (!(job = getjobjid(jobs, _jid))) {
+        printf("(%%%s): No such job\n", buf);
+      }
     }
     sigprocmask(SIG_BLOCK, &mask_all, &pre_all);
     job = getjobjid(jobs, _jid); // main operation
@@ -342,8 +381,6 @@ void do_bgfg(char **argv) {
         sigprocmask(SIG_SETMASK, &pre_all, NULL);
         waitfg(job->pid);
       }
-    } else {
-      printf("no background job\n");
     }
   }
   return;
@@ -389,6 +426,9 @@ void sigchld_handler(int sig) {
     if (WIFSTOPPED(status)) {
       getjobpid(jobs, pid)->state = ST;
       printf("Job [%d] (%d) stoped by signal 20\n", pid2jid(pid), pid);
+    } else if (WIFSIGNALED(status)) {
+      printf("Job [%d] (%d) terminated by signal 2\n", pid2jid(pid), pid);
+      deletejob(jobs, pid);
     } else {
       deletejob(jobs, pid);
     }
