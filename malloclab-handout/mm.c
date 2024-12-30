@@ -127,6 +127,7 @@ void *mm_malloc(size_t size) {
   if ((bp = find_block(asize)) != NULL) {
     pop_block(bp);
     place(bp, asize);
+    // CHECKHEAP(lineno)
     return bp;
   };
   extendsize = MAX(asize, CHUNKSIZE);
@@ -135,8 +136,7 @@ void *mm_malloc(size_t size) {
   }
   pop_block(bp);
   place(bp, asize);
-  printf("malloc a block which size is %zu\n", size);
-  CHECKHEAP(lineno)
+  // CHECKHEAP(lineno)
   return bp;
 }
 
@@ -147,9 +147,7 @@ void mm_free(void *ptr) {
   PUT(HDRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
   PUT(FTRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
   coalesce(ptr);
-  insert_list(ptr, choose_list(GET_SIZE(HDRP(ptr))));
-  printf("free a block\n");
-  CHECKHEAP(lineno)
+  // CHECKHEAP(lineno)
 }
 
 /*
@@ -182,7 +180,7 @@ static void insert_list(void *bp, void **list) {
   }
   PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 0));
   PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 0));
-  CHECKHEAP(lineno)
+  // CHECKHEAP(lineno)
 }
 
 static void pop_block(char *bp) {
@@ -190,27 +188,16 @@ static void pop_block(char *bp) {
   int isheadnode = (GET_POINT(PREP(bp)) < heap_listp);
   int nextisnull = (GET_POINT(SUCP(bp)) == NULL);
   if (isheadnode && !nextisnull) {
-    PUT_POINT(PREP(bp), GET_POINT(SUCP(bp)));
+    PUT_POINT(GET_POINT(PREP(bp)), GET_POINT(SUCP(bp)));
     PUT_POINT(PREP(GET_POINT(SUCP(bp))), GET_POINT(PREP(bp)));
-    PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-    PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-  }
-  if (!isheadnode && nextisnull) {
+  } else if (!isheadnode && nextisnull) {
     PUT_POINT(SUCP(GET_POINT(PREP(bp))), NULL);
-    PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-    PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-  }
-  if (isheadnode && nextisnull) {
+  } else if (isheadnode && nextisnull) {
     PUT_POINT(GET_POINT(PREP(bp)), NULL);
-    PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-    PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
   } else {
     GET_POINT(SUCP(GET_POINT(PREP(bp)))) = GET_POINT(SUCP(bp));
     GET_POINT(PREP(GET_POINT(SUCP(bp)))) = GET_POINT(PREP(bp));
-    PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-    PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
   }
-  CHECKHEAP(lineno);
 }
 
 static void *choose_list(size_t size) {
@@ -247,7 +234,7 @@ static void *coalesce(void *bp) {
   size_t size = GET_SIZE(HDRP(bp));
 
   if (pre_alloc && next_alloc) {
-    return bp;
+    insert_list(bp, choose_list(size));
   } else if (pre_alloc && !next_alloc) {
     size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
     pop_block(NEXT_BLKP(bp));
@@ -270,7 +257,7 @@ static void *coalesce(void *bp) {
     bp = PREV_BLKP(bp);
     insert_list(bp, choose_list(size));
   }
-  CHECKHEAP(lineno)
+  // CHECKHEAP(lineno)
   return bp;
 }
 
@@ -283,11 +270,8 @@ static void *extend_heap(size_t size) {
   PUT(HDRP(bp), PACK(size, 0));
   PUT(FTRP(bp), PACK(size, 0));
   PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));
-  PUT_POINT(PREP(bp), NULL);
-  PUT_POINT(SUCP(bp), NULL);
   bp = coalesce(bp);
-  insert_list(bp, choose_list(size));
-  CHECKHEAP(lineno)
+  // CHECKHEAP(lineno)
   return bp;
 }
 
@@ -337,10 +321,13 @@ static void place(char *bp, size_t size) {
     PUT(FTRP(bp), PACK(size, 1));
     PUT(HDRP(NEXT_BLKP(bp)), PACK(asize, 0));
     PUT(FTRP(NEXT_BLKP(bp)), PACK(asize, 0));
-    insert_list(NEXT_BLKP(bp), choose_list(asize));
+    coalesce(NEXT_BLKP(bp));
+    // CHECKHEAP(lineno)
+  } else {
+    PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+    PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+    // CHECKHEAP(lineno)
   }
-  PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-  PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
 }
 
 static void inRange() {
