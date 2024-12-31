@@ -5,7 +5,7 @@
  * efficient and space-less
  */
 // Uncomment to enable debug levels
-#define DEBUG
+// #define DEBUG
 
 #include "mm.h"
 #include "memlib.h"
@@ -38,6 +38,8 @@ team_t team = {
 #define CHECKHEAP                                                              \
   printf("%d  in function %s\n", __LINE__, __func__);                          \
   heap_checker();
+#else
+#define CHECKHEAP
 #endif
 
 #define ALIGNMENT 8
