@@ -4,6 +4,11 @@
  * and each free list insert after the head node. I think it is both
  * efficient and space-less
  */
+// Uncomment to enable debug levels
+#define DEBUG
+
+#include "mm.h"
+#include "memlib.h"
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -12,25 +17,28 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "memlib.h"
-#include "mm.h"
-
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your team information in the following struct.
  ********************************************************/
 team_t team = {
     /* Team name */
-    "ateam",
+    "dyh",
     /* First member's full name */
-    "Harry Bovik",
+    "dongyuhang",
     /* First member's email address */
-    "bovik@cs.cmu.edu",
+    "1625132542@qq.com",
     /* Second member's full name (leave blank if none) */
     "",
     /* Second member's email address (leave blank if none) */
     ""};
 /* single word (4) or double word (8) alignment */
+
+#ifdef DEBUG
+#define CHECKHEAP                                                              \
+  printf("%d  in function %s\n", __LINE__, __func__);                          \
+  heap_checker();
+#endif
 
 #define ALIGNMENT 8
 /* rounds up to the nearest multiple of ALIGNMENT */
@@ -77,9 +85,6 @@ static void heap_checker();
 static void pop_block(char *bp);
 static void *find_block(size_t size);
 static void place(char *bp, size_t size);
-#define CHECKHEAP(lineno)                                                      \
-  printf("%d  in function %s\n", __LINE__, __func__);                          \
-  heap_checker();
 /*
  * mm_init - initialize the malloc package.
  */
@@ -127,7 +132,7 @@ void *mm_malloc(size_t size) {
   if ((bp = find_block(asize)) != NULL) {
     pop_block(bp);
     place(bp, asize);
-    // CHECKHEAP(lineno)
+    CHECKHEAP
     return bp;
   };
   extendsize = MAX(asize, CHUNKSIZE);
@@ -136,7 +141,7 @@ void *mm_malloc(size_t size) {
   }
   pop_block(bp);
   place(bp, asize);
-  // CHECKHEAP(lineno)
+  CHECKHEAP
   return bp;
 }
 
@@ -147,13 +152,16 @@ void mm_free(void *ptr) {
   PUT(HDRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
   PUT(FTRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
   coalesce(ptr);
-  // CHECKHEAP(lineno)
+  CHECKHEAP
 }
 
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
 void *mm_realloc(void *ptr, size_t size) {
+  if (!ptr) {
+    return mm_malloc(size);
+  }
   void *oldptr = ptr;
   void *newptr;
   size_t copySize;
@@ -161,7 +169,7 @@ void *mm_realloc(void *ptr, size_t size) {
   newptr = mm_malloc(size);
   if (newptr == NULL)
     return NULL;
-  copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+  copySize = GET_SIZE(HDRP(ptr));
   if (size < copySize)
     copySize = size;
   memcpy(newptr, oldptr, copySize);
@@ -173,6 +181,7 @@ void *mm_realloc(void *ptr, size_t size) {
 static void insert_list(void *bp, void **list) {
   char *head = *list;
   *list = (char *)bp;
+
   PUT_POINT(SUCP(bp), head);
   PUT_POINT(PREP(bp), (char *)list);
   if (head) {
@@ -180,7 +189,7 @@ static void insert_list(void *bp, void **list) {
   }
   PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 0));
   PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 0));
-  // CHECKHEAP(lineno)
+  CHECKHEAP
 }
 
 static void pop_block(char *bp) {
@@ -200,32 +209,52 @@ static void pop_block(char *bp) {
   }
 }
 
+// static void *choose_list(size_t size) {
+//   if (size >= 16 && size < 32) {
+//     return list_32;
+//   }
+//   if (size >= 32 && size < 64) {
+//     return list_64;
+//   }
+//   if (size >= 64 && size < 128) {
+//     return list_128;
+//   }
+//   if (size >= 128 && size < 256) {
+//     return list_256;
+//   }
+//   if (size >= 256 && size < 512) {
+//     return list_512;
+//   }
+//   if (size >= 512 && size < 1024) {
+//     return list_1024;
+//   }
+//   if (size >= 1024 && size < 2048) {
+//     return list_2048;
+//   }
+//   if (size >= 2048) {
+//     return list_infinite;
+//   }
+//   return NULL;
+// }
 static void *choose_list(size_t size) {
-  if (size >= 16 && size < 32) {
+  switch (size) {
+  case 16 ... 31:
     return list_32;
-  }
-  if (size >= 32 && size < 64) {
+  case 32 ... 63:
     return list_64;
-  }
-  if (size >= 64 && size < 128) {
+  case 64 ... 127:
     return list_128;
-  }
-  if (size >= 128 && size < 256) {
+  case 128 ... 255:
     return list_256;
-  }
-  if (size >= 256 && size < 512) {
+  case 256 ... 511:
     return list_512;
-  }
-  if (size >= 512 && size < 1024) {
+  case 512 ... 1023:
     return list_1024;
-  }
-  if (size >= 1024 && size < 2048) {
+  case 1024 ... 2047:
     return list_2048;
+  default:
+    return (size >= 2048) ? list_infinite : NULL;
   }
-  if (size >= 2048) {
-    return list_infinite;
-  }
-  return NULL;
 }
 
 static void *coalesce(void *bp) {
@@ -257,7 +286,7 @@ static void *coalesce(void *bp) {
     bp = PREV_BLKP(bp);
     insert_list(bp, choose_list(size));
   }
-  // CHECKHEAP(lineno)
+  CHECKHEAP
   return bp;
 }
 
@@ -271,7 +300,7 @@ static void *extend_heap(size_t size) {
   PUT(FTRP(bp), PACK(size, 0));
   PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));
   bp = coalesce(bp);
-  // CHECKHEAP(lineno)
+  CHECKHEAP
   return bp;
 }
 
@@ -322,11 +351,11 @@ static void place(char *bp, size_t size) {
     PUT(HDRP(NEXT_BLKP(bp)), PACK(asize, 0));
     PUT(FTRP(NEXT_BLKP(bp)), PACK(asize, 0));
     coalesce(NEXT_BLKP(bp));
-    // CHECKHEAP(lineno)
+    CHECKHEAP
   } else {
     PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
     PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-    // CHECKHEAP(lineno)
+    CHECKHEAP
   }
 }
 
