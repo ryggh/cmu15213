@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
 //
 void doit(int fd) {
   char buf[MAXLINE], method[MAXLINE], url[MAXLINE], version[MAXLINE],
-      errorbuf[MAXLINE], allInfo[MAXLINE], proxy_buf[MAXLINE],
+      errorbuf[MAXLINE], allInfo[MAXBUF], proxy_buf[MAXLINE],
       proxy_allInfo[MAXLINE];
   rio_t rio_client, rio_server;
   int proxyfd;
@@ -66,12 +66,14 @@ void doit(int fd) {
   Rio_readinitb(&rio_client, fd);
   Rio_readlineb(&rio_client, buf, MAXLINE);
   printf("%s", buf);
+  if (!strcmp(buf, "\r\n")) {
+    return;
+  }
   sscanf(buf, "%s %s %s", method, url, version);
   while (strcasecmp(method, "GET")) {
     sprintf(errorbuf, "the usage: GET url version\n");
     Rio_writen(fd, errorbuf, strlen(errorbuf));
-    Rio_readlineb(&rio_client, buf, MAXLINE);
-    printf("%s", buf);
+    return;
   }
   version[7] = '0';            // HTTP/1.1 -> HTTP/1.0
   serverinfo = parse_url(url); // extract the property of the url
@@ -82,7 +84,7 @@ void doit(int fd) {
   Rio_readinitb(&rio_server, proxyfd);
   sprintf(allInfo, "GET %s %s\r\n", serverinfo.uri, version);
   sprintf(allInfo + strlen(allInfo), "Host: %s\r\n", serverinfo.hostname);
-  sprintf(allInfo + strlen(allInfo), "User-Agent: %s", user_agent_hdr);
+  sprintf(allInfo + strlen(allInfo), "%s", user_agent_hdr);
   sprintf(allInfo + strlen(allInfo), "Connection: close\r\n");
   sprintf(allInfo + strlen(allInfo), "Proxy-Connection: close\r\n");
   // concatenate client's request header and proxy's header
@@ -108,12 +110,14 @@ void doit(int fd) {
   //   strcat(proxy_allInfo, proxy_buf);
   //   Rio_readlineb(&rio_server, proxy_buf, MAXLINE);
   // }
-  while (Rio_readlineb(&rio_server, proxy_buf, MAXLINE)) {
-    strcat(proxy_allInfo, proxy_buf);
+  int num;
+  while ((num = Rio_readnb(&rio_server, proxy_buf, MAXLINE))) {
+    if (num == 0) {
+      break;
+    }
+    Rio_writen(fd, proxy_buf, num);
   }
   Close(proxyfd);
-  printf("%s\n", proxy_allInfo);
-  Rio_writen(fd, proxy_allInfo, strlen(proxy_allInfo));
 }
 
 struct socketinfo parse_url(char *url) {
