@@ -9,9 +9,16 @@ CFLAGS = -g -Wall
 LDFLAGS = -lpthread
 
 all: proxy
+	./proxy 8000
 
 csapp.o: csapp.c csapp.h
 	$(CC) $(CFLAGS) -c csapp.c
+
+test.o: test.c csapp.h
+	$(CC) $(CFLAGS) -c test.c
+
+test: test.o csapp.o
+	$(CC) $(CFLAGS) test.o csapp.o -o test $(LDFLAGS)
 
 proxy.o: proxy.c csapp.h
 	$(CC) $(CFLAGS) -c proxy.c
