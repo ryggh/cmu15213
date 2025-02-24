@@ -65,6 +65,10 @@ void doit(int fd) {
   struct socketinfo serverinfo;
   Rio_readinitb(&rio_client, fd);
   Rio_readlineb(&rio_client, buf, MAXLINE);
+  if (errno == ECONNRESET) {
+    fprintf(stderr, "Connection reset by peer (ECONNRESET). Closing socket.\n");
+    return;
+  }
   printf("%s", buf);
   if (!strcmp(buf, "\r\n")) {
     return;
@@ -90,13 +94,27 @@ void doit(int fd) {
   // concatenate client's request header and proxy's header
 
   Rio_readlineb(&rio_client, buf, MAXLINE);
+  if (errno == ECONNRESET) {
+    fprintf(stderr, "Connection reset by peer (ECONNRESET). Closing socket.\n");
+    return;
+  }
   while (strcmp(buf, "\r\n")) {
     if (strstr(buf, "Host") || strstr(buf, "User-Agent") ||
         strstr(buf, "Connection")) {
       Rio_readlineb(&rio_client, buf, MAXLINE);
+      if (errno == ECONNRESET) {
+        fprintf(stderr,
+                "Connection reset by peer (ECONNRESET). Closing socket.\n");
+        return;
+      }
     } else {
       strcat(allInfo, buf);
       Rio_readlineb(&rio_client, buf, MAXLINE);
+      if (errno == ECONNRESET) {
+        fprintf(stderr,
+                "Connection reset by peer (ECONNRESET). Closing socket.\n");
+        return;
+      }
     }
   }
   strcat(allInfo, "\r\n");
@@ -112,6 +130,14 @@ void doit(int fd) {
   // }
   int num;
   while ((num = Rio_readnb(&rio_server, proxy_buf, MAXLINE))) {
+    if (num < 0) {
+      if (errno == ECONNRESET) {
+        fprintf(stderr,
+                "Connection reset by peer (ECONNRESET). Closing socket.\n");
+        Close(proxyfd);
+        return;
+      }
+    }
     if (num == 0) {
       break;
     }
