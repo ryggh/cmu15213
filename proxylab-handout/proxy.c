@@ -1,9 +1,12 @@
 #include "csapp.h"
 #include <netdb.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -20,13 +23,17 @@ struct socketinfo {
 };
 
 struct socketinfo parse_url(char *url);
+void sigchld_handler(int sig);
 void requset_header_parser(rio_t *rp);
 void doit(int fd);
+
 int main(int argc, char **argv) {
-  int listenfd, browser, serverfd;
+  int listenfd, browser;
   char hostname[MAXLINE], port[MAXLINE];
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
+  Signal(SIGPIPE, SIG_IGN);
+  Signal(SIGCHLD, sigchld_handler);
   if (argc != 2) {
     fprintf(stdout, "usage: ./%s <port>\n", *argv);
     exit(1);
@@ -38,7 +45,12 @@ int main(int argc, char **argv) {
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
                 NI_NUMERICSERV);
     printf("Accepted connection from (%s, %s)\n", hostname, port);
-    doit(browser);
+    if (Fork() == 0) {
+      Close(listenfd);
+      doit(browser);
+      Close(browser);
+      exit(0);
+    }
     Close(browser);
   }
 }
@@ -58,25 +70,37 @@ int main(int argc, char **argv) {
 //
 void doit(int fd) {
   char buf[MAXLINE], method[MAXLINE], url[MAXLINE], version[MAXLINE],
-      errorbuf[MAXLINE], allInfo[MAXBUF], proxy_buf[MAXLINE],
-      proxy_allInfo[MAXLINE];
+      errorbuf[MAXLINE], allInfo[MAXBUF], proxy_buf[MAXLINE];
   rio_t rio_client, rio_server;
   int proxyfd;
   struct socketinfo serverinfo;
   Rio_readinitb(&rio_client, fd);
-  Rio_readlineb(&rio_client, buf, MAXLINE);
-  if (errno == ECONNRESET) {
-    fprintf(stderr, "Connection reset by peer (ECONNRESET). Closing socket.\n");
-    return;
+  if (rio_readlineb(&rio_client, buf, MAXLINE) < 0) {
+    if (errno == ECONNRESET) {
+      fprintf(stderr, "Connection reset by peer . Closing socket.\n");
+      return;
+    } else {
+      fprintf(stderr, "another error. Closing socket.\n");
+      return;
+    }
   }
-  printf("%s", buf);
+  printf("%s\n", buf);
   if (!strcmp(buf, "\r\n")) {
+    fprintf(stderr, "no request\n");
     return;
   }
   sscanf(buf, "%s %s %s", method, url, version);
-  while (strcasecmp(method, "GET")) {
+  if (strcasecmp(method, "GET")) {
     sprintf(errorbuf, "the usage: GET url version\n");
-    Rio_writen(fd, errorbuf, strlen(errorbuf));
+    if (rio_writen(fd, errorbuf, strlen(errorbuf)) < 0) {
+
+      if (errno == EPIPE) {
+        perror("dyh");
+        return;
+      } else {
+        perror("another error");
+      }
+    }
     return;
   }
   version[7] = '0';            // HTTP/1.1 -> HTTP/1.0
@@ -93,55 +117,90 @@ void doit(int fd) {
   sprintf(allInfo + strlen(allInfo), "Proxy-Connection: close\r\n");
   // concatenate client's request header and proxy's header
 
-  Rio_readlineb(&rio_client, buf, MAXLINE);
-  if (errno == ECONNRESET) {
-    fprintf(stderr, "Connection reset by peer (ECONNRESET). Closing socket.\n");
-    return;
+  if (rio_readlineb(&rio_client, buf, MAXLINE) < 0) {
+    if (errno == ECONNRESET) {
+      fprintf(stderr, "Connection reset by peer . Closing socket.\n");
+      Close(proxyfd);
+      return;
+    } else {
+      fprintf(stderr, "another error. Closing socket.\n");
+      Close(proxyfd);
+      return;
+    }
   }
   while (strcmp(buf, "\r\n")) {
     if (strstr(buf, "Host") || strstr(buf, "User-Agent") ||
         strstr(buf, "Connection")) {
-      Rio_readlineb(&rio_client, buf, MAXLINE);
-      if (errno == ECONNRESET) {
-        fprintf(stderr,
-                "Connection reset by peer (ECONNRESET). Closing socket.\n");
-        return;
+      if (rio_readlineb(&rio_client, buf, MAXLINE) < 0) {
+        if (errno == ECONNRESET) {
+          fprintf(stderr, "Connection reset by peer . Closing socket.\n");
+          Close(proxyfd);
+          return;
+        } else {
+          fprintf(stderr, "another error. Closing socket.\n");
+          Close(proxyfd);
+          return;
+        }
       }
     } else {
       strcat(allInfo, buf);
-      Rio_readlineb(&rio_client, buf, MAXLINE);
-      if (errno == ECONNRESET) {
-        fprintf(stderr,
-                "Connection reset by peer (ECONNRESET). Closing socket.\n");
-        return;
+      if (rio_readlineb(&rio_client, buf, MAXLINE) < 0) {
+        if (errno == ECONNRESET) {
+          fprintf(stderr, "Connection reset by peer . Closing socket.\n");
+          Close(proxyfd);
+          return;
+        } else {
+          fprintf(stderr, "another error. Closing socket.\n");
+          Close(proxyfd);
+          return;
+        }
       }
     }
   }
   strcat(allInfo, "\r\n");
 
   // end concatenate
-  proxy_allInfo[0] = '\0';
   printf("%s\n", allInfo);
-  Rio_writen(proxyfd, allInfo, strlen(allInfo));
-  // Rio_readlineb(&rio_server, proxy_buf, MAXLINE);
-  // while (strcmp(proxy_buf, "\r\n")) {
-  //   strcat(proxy_allInfo, proxy_buf);
-  //   Rio_readlineb(&rio_server, proxy_buf, MAXLINE);
-  // }
+  if (rio_writen(proxyfd, allInfo, strlen(allInfo)) < 0) {
+
+    if (errno == EPIPE) {
+      perror("error pipe");
+      Close(proxyfd);
+      return;
+    } else {
+      perror("another");
+      Close(proxyfd);
+      return;
+    }
+  }
   int num;
-  while ((num = Rio_readnb(&rio_server, proxy_buf, MAXLINE))) {
+  ;
+  while ((num = rio_readnb(&rio_server, proxy_buf, MAXLINE))) {
     if (num < 0) {
       if (errno == ECONNRESET) {
-        fprintf(stderr,
-                "Connection reset by peer (ECONNRESET). Closing socket.\n");
+        fprintf(stderr, "Connection reset by peer . Closing socket.\n");
         Close(proxyfd);
+        return;
+      } else {
+        fprintf(stderr, "another error. Closing socket.\n");
         return;
       }
     }
     if (num == 0) {
       break;
     }
-    Rio_writen(fd, proxy_buf, num);
+    if (rio_writen(fd, proxy_buf, num) < 0) {
+
+      if (errno == EPIPE) {
+        fprintf(stderr, "EPIPE");
+        Close(proxyfd);
+        return;
+      } else {
+        perror("another");
+        Close(proxyfd);
+        return;
+      }
+    }
   }
   Close(proxyfd);
 }
@@ -165,14 +224,8 @@ struct socketinfo parse_url(char *url) {
   return result;
 }
 
-void requset_header_parser(rio_t *rp) {
-  char buf[MAXLINE];
-  char allInfo[MAXLINE];
-  while (rio_readlineb(rp, buf, MAXLINE)) {
-    printf("%s", buf);
-    fflush(stdout);
-    if (!strcmp(buf, "\r\n")) {
-      break;
-    }
-  }
+void sigchld_handler(int sig) {
+  while (waitpid(-1, 0, WNOHANG) > 0)
+    ;
+  return;
 }
