@@ -206,8 +206,10 @@ void doit(int fd) {
       break;
     }
     byte_cnt += num;
-    memcpy(tembuf, proxy_buf, num);
-    tembuf += num;
+    if (byte_cnt <= MAX_OBJECT_SIZE) {
+      memcpy(tembuf, proxy_buf, num);
+      tembuf += num;
+    }
     if (rio_writen(fd, proxy_buf, num) < 0) {
 
       if (errno == EPIPE) {
@@ -223,10 +225,12 @@ void doit(int fd) {
       }
     }
   }
-  insertCache(&cache, url, cachebuf, byte_cnt);
-  Free(cachebuf);
-  printf("insert to cache\n");
+  if (byte_cnt <= MAX_OBJECT_SIZE) {
+    insertCache(&cache, url, cachebuf, byte_cnt);
+    printf("insert to cache\n");
+  }
   Close(proxyfd);
+  Free(cachebuf);
   return;
 }
 

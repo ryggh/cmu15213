@@ -51,7 +51,23 @@ ssize_t findCache(CacheBlock *cache, char *url, char *buf) {
   return size;
 }
 
-static SingleBlock *selectCache(CacheBlock *cache) {
+// ssize_t findCache(CacheBlock *cache, char *url, char *buf) {
+//   P(&cache->w);
+//   int size = -1;
+//   for (int i = 0; i < CACHE_SIZE; ++i) {
+//     if (cache->blocks[i].exit && !strcmp(url, cache->blocks[i].url)) {
+//       memcpy(buf, cache->blocks[i].object, cache->blocks[i].size);
+//       size = cache->blocks[i].size;
+//       cache->blocks[i].count = 0;
+//       continue;
+//     }
+//     cache->blocks[i].count++;
+//   }
+//   V(&cache->w);
+//   return size;
+// }
+
+SingleBlock *selectCache(CacheBlock *cache) {
   int max = -1;
   SingleBlock *block;
   for (int i = 0; i < CACHE_SIZE; ++i) {
@@ -72,6 +88,9 @@ void insertCache(CacheBlock *cache, char *url, char *buf, int webpagesize) {
   block->count = 0;
   block->exit = 1;
   block->size = webpagesize;
+  for (int i = 0; i < CACHE_SIZE; ++i) {
+    cache->blocks[i].count++;
+  }
   strcpy(block->url, url);
   memcpy(block->object, buf, webpagesize);
   V(&cache->w);

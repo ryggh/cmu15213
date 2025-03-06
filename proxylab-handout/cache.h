@@ -24,7 +24,7 @@ typedef struct {
 ssize_t findCache(CacheBlock *cache, char *url, char *buf);
 void CacheFree(CacheBlock *cache);
 void insertCache(CacheBlock *cache, char *url, char *buf, int webpagesize);
-static SingleBlock *selectCache(CacheBlock *cache);
+SingleBlock *selectCache(CacheBlock *cache);
 void Cacheinit(CacheBlock *cache);
 
 #endif
